@@ -123,7 +123,7 @@ class PotassiumPumpFeeder(Feeder):
         R = 8.314       # Universal gas constant (J/mol/K)
         T = 310.15      # Temperature in Kelvin (~37°C)
 
-        # GHK equation simplified: Flux as a function of concentrations and potential
+        # GHK equation: Flux as a function of concentrations and potential
         numerator = self.k_out - self.k_in * math.exp(-self.membrane_potential * F / (R * T))
         denominator = 1 - math.exp(-self.membrane_potential * F / (R * T))
         flux = numerator / denominator if denominator != 0 else 0
@@ -141,16 +141,11 @@ class Heartbeat:
         """
         Initialize heartbeat with initial fuel and movement increment.
         
-        The heartbeat simulation starts automatically upon initialization and runs
-        until the fuel is depleted. The simulation uses asyncio for time-based updates.
-
         Args:
             initial_fuel (float, optional): Starting fuel value. Higher values allow
                 longer simulation runs. Defaults to 10.
-            increment (float, optional): Base movement speed increment. Controls how
-                fast the heartbeat position changes. Defaults to 0.01.
-            potassium_pump (PotassiumPumpFeeder, optional): An instance of PotassiumPumpFeeder
-                to influence the heartbeat dynamics. Defaults to None.
+            increment (float, optional): Base movement speed increment. Defaults to 0.01.
+            potassium_pump: An optional PotassiumPumpFeeder instance to influence the heartbeat dynamics.
         """
         self.low_end = -1
         self.high_end = 1
@@ -159,31 +154,22 @@ class Heartbeat:
         self.fuel = initial_fuel
         self.base_increment = increment
         self.potassium_pump = potassium_pump  # Optional potassium pump integration
-        
-        asyncio.run(self.start())
 
     async def start(self):
         """
         Start the motorized heartbeat simulation with fuel dependency and dynamic movement.
-
-        This async method runs the main simulation loop. It:
-        1. Initializes a random starting position and movement threshold
-        2. Oscillates position between calculated bounds
-        3. Consumes fuel with each movement cycle
-        4. Adjusts speed based on fuel levels and optional potassium pump influence
-        5. Stops when fuel is depleted
         """
-        start = random.uniform(-1, 1)  # Random initial position
-        threshold = random.uniform(0.3, 0.9)  # Random movement range threshold
+        start = random.uniform(-1, 1)
+        threshold = random.uniform(0.3, 0.9)
         print(f"Initial start: {start:.4f}")
         print(f"Threshold: {threshold:.4f}")
 
-        self.direction = 1 if start >= 0 else 0  # Initial direction
+        self.direction = 1 if start >= 0 else 0
         self.position = start
         self.low_end = max(-1, start - threshold)
         self.high_end = min(1, start + threshold)
 
-        while self.fuel > 0:  # Continue as long as there's fuel
+        while self.fuel > 0:
             # Update direction
             if self.position <= self.low_end:
                 self.direction = 1
@@ -201,19 +187,18 @@ class Heartbeat:
 
             # Log state
             flux = self.potassium_pump.calculate_ghk() if self.potassium_pump else 0
-            print(f"Direction: {'up' if self.direction else 'down'} @ {self.position:.4f}, Speed: {increment:.4f}, "
-                  f"Fuel: {self.fuel:.3f}, Flux: {flux:.6f}")
+            print(
+                f"Direction: {'up' if self.direction else 'down'} @ {self.position:.4f}, "
+                f"Speed: {increment:.4f}, Fuel: {self.fuel:.3f}, Flux: {flux:.6f}"
+            )
 
-            await asyncio.sleep(1)  # Delay for the effect
+            await asyncio.sleep(1)
 
         print("Out of fuel! Heartbeat stopped.")
 
     def dynamic_increment(self):
         """
         Compute the movement increment dynamically based on fuel level and environmental factors.
-
-        If a potassium pump is integrated, its ion flux (calculated from GHK equation) is factored into
-        the increment computation to reflect a biological influence.
 
         Returns:
             float: The calculated movement increment.
@@ -233,13 +218,6 @@ class Heartbeat:
 async def do_heartbeat(initial_fuel, increment, k_in, k_out, membrane_potential):
     """
     Run a heartbeat simulation instance.
-
-    Args:
-        initial_fuel (float): Initial fuel level for the Heartbeat.
-        increment (float): Base increment for heartbeat movement speed.
-        k_in (float): Intracellular concentration of potassium in mM.
-        k_out (float): Extracellular concentration of potassium in mM.
-        membrane_potential (float): Membrane potential in mV.
     """
     pump = PotassiumPumpFeeder(k_in, k_out, membrane_potential)
     heartbeat = Heartbeat(initial_fuel=initial_fuel, increment=increment, potassium_pump=pump)
@@ -250,19 +228,23 @@ def main():
     """
     Entry point to run the heartbeat simulation from the command line.
 
-    Expects command-line arguments for initial fuel level, increment, and potassium pump parameters.
+    This function ensures compatibility in both interactive and non-interactive
+    environments by explicitly creating the event loop.
     """
     parser = argparse.ArgumentParser(description="Run the Heartbeat Simulation with Potassium Pump dynamics.")
     parser.add_argument("--fuel", type=float, default=10, help="Initial fuel level")
     parser.add_argument("--increment", type=float, default=0.01, help="Base movement speed increment")
-    parser.add_argument("--k_in", type=float, default=140.0, help="Intracellular concentration of potassium (mM)")
-    parser.add_argument("--k_out", type=float, default=5.0, help="Extracellular concentration of potassium (mM)")
+    parser.add_argument("--k_in", type=float, default=140.0, help="Intracellular potassium concentration (mM)")
+    parser.add_argument("--k_out", type=float, default=5.0, help="Extracellular potassium concentration (mM)")
     parser.add_argument("--mem_pot", type=float, default=-70, help="Membrane potential (mV)")
     
     args = parser.parse_args()
     
     try:
-        asyncio.run(do_heartbeat(args.fuel, args.increment, args.k_in, args.k_out, args.mem_pot))
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(do_heartbeat(
+            args.fuel, args.increment, args.k_in, args.k_out, args.mem_pot
+        ))
     except KeyboardInterrupt:
         print("\nSimulation interrupted.")
     except Exception as e:
