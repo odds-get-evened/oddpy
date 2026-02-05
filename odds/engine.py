@@ -75,6 +75,62 @@ def relu(x):
     return max(0, x)
 
 
+class Feeder:
+    """
+    Represents a generic data supplier for the simulation.
+
+    This class serves as a base for more specific simulation modules such
+    as the potassium pump simulation.
+    """
+    
+    def fetch_data(self):
+        """
+        Abstract method for data retrieval. Should be implemented by subclasses.
+        
+        Raises:
+            NotImplementedError: If the method is not implemented by a subclass.
+        """
+        raise NotImplementedError("fetch_data must be implemented by subclasses")
+
+
+class PotassiumPumpFeeder(Feeder):
+    """
+    Simulates a potassium pump via the Goldman-Hodgkin-Katz (GHK) equation.
+    """
+
+    def __init__(self, k_in=140.0, k_out=5.0, membrane_potential=-70.0):
+        """
+        Initialize a potassium pump using the GHK equation parameters.
+        
+        Args:
+            k_in (float): Intracellular concentration of potassium in mM.
+            k_out (float): Extracellular concentration of potassium in mM.
+            membrane_potential (float): Membrane potential in mV. Defaults to -70 mV.
+        """
+        self.k_in = k_in
+        self.k_out = k_out
+        self.membrane_potential = membrane_potential
+
+    def calculate_ghk(self):
+        """
+        Calculate the ion flux using the GHK equation approximation.
+
+        Returns:
+            float: A value representing ion flux through the potassium pump.
+        """
+        # Constants used in GHK Equation
+        F = 96485.3329  # Faraday's constant (C/mol)
+        R = 8.314       # Universal gas constant (J/mol/K)
+        T = 310.15      # Temperature in Kelvin (~37°C)
+
+        # GHK equation simplified: Flux as a function of concentrations and potential
+        numerator = self.k_out - self.k_in * math.exp(-self.membrane_potential * F / (R * T))
+        denominator = 1 - math.exp(-self.membrane_potential * F / (R * T))
+        flux = numerator / denominator if denominator != 0 else 0
+
+        return flux
+
+
 class Heartbeat:
     """
     Represents a dynamic heartbeat movement powered by a fuel source and optionally
@@ -172,3 +228,47 @@ class Heartbeat:
             increment *= 1 + flux  # Increase or decrease speed based on flux effect
 
         return max(0.001, increment)
+
+
+async def do_heartbeat(initial_fuel, increment, k_in, k_out, membrane_potential):
+    """
+    Run a heartbeat simulation instance.
+
+    Args:
+        initial_fuel (float): Initial fuel level for the Heartbeat.
+        increment (float): Base increment for heartbeat movement speed.
+        k_in (float): Intracellular concentration of potassium in mM.
+        k_out (float): Extracellular concentration of potassium in mM.
+        membrane_potential (float): Membrane potential in mV.
+    """
+    pump = PotassiumPumpFeeder(k_in, k_out, membrane_potential)
+    heartbeat = Heartbeat(initial_fuel=initial_fuel, increment=increment, potassium_pump=pump)
+    await heartbeat.start()
+
+
+def main():
+    """
+    Entry point to run the heartbeat simulation from the command line.
+
+    Expects command-line arguments for initial fuel level, increment, and potassium pump parameters.
+    """
+    parser = argparse.ArgumentParser(description="Run the Heartbeat Simulation with Potassium Pump dynamics.")
+    parser.add_argument("--fuel", type=float, default=10, help="Initial fuel level")
+    parser.add_argument("--increment", type=float, default=0.01, help="Base movement speed increment")
+    parser.add_argument("--k_in", type=float, default=140.0, help="Intracellular concentration of potassium (mM)")
+    parser.add_argument("--k_out", type=float, default=5.0, help="Extracellular concentration of potassium (mM)")
+    parser.add_argument("--mem_pot", type=float, default=-70, help="Membrane potential (mV)")
+    
+    args = parser.parse_args()
+    
+    try:
+        asyncio.run(do_heartbeat(args.fuel, args.increment, args.k_in, args.k_out, args.mem_pot))
+    except KeyboardInterrupt:
+        print("\nSimulation interrupted.")
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
