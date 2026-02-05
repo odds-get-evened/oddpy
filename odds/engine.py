@@ -123,10 +123,19 @@ class PotassiumPumpFeeder(Feeder):
         R = 8.314       # Universal gas constant (J/mol/K)
         T = 310.15      # Temperature in Kelvin (~37°C)
 
+        # Calculate the exponent to avoid ValueError if the exponent is too large (e.g., very negative or very positive).
+        exponent = -self.membrane_potential * F / (R * T)
+
+        # Prevent overflow errors by clamping the exponent value
+        if exponent < -700:
+            exponent = -700  # Safeguard for very negative exponents (avoids math range error)
+        if exponent > 700:
+            exponent = 700  # Safeguard for very large positive exponents
+
         # GHK equation: Flux as a function of concentrations and potential
-        numerator = self.k_out - self.k_in * math.exp(-self.membrane_potential * F / (R * T))
-        denominator = 1 - math.exp(-self.membrane_potential * F / (R * T))
-        flux = numerator / denominator if denominator != 0 else 0
+        numerator = self.k_out - self.k_in * math.exp(exponent)
+        denominator = 1 - math.exp(exponent)
+        flux = numerator / denominator if abs(denominator) > 1e-9 else 0  # Avoid division by zero
 
         return flux
 
@@ -241,8 +250,7 @@ def main():
     args = parser.parse_args()
     
     try:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(do_heartbeat(
+        asyncio.run(do_heartbeat(
             args.fuel, args.increment, args.k_in, args.k_out, args.mem_pot
         ))
     except KeyboardInterrupt:
